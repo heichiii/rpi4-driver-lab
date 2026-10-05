@@ -3,3 +3,4 @@
 *.ko
 *.symvers
 *.order
+*.mod*
