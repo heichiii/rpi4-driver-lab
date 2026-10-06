@@ -7,10 +7,11 @@
   -> I2C core 创建 i2c_client（1-0068）
   -> compatible = heichi,mpu6500-lab 匹配
   -> mpu6500_probe(client)
-  -> 检查 SMBus byte-data 读写和普通 I2C 传输能力
-  -> i2c_smbus_read_byte_data(client, 0x75)
+  -> 检查普通 I2C 传输能力，创建 regmap 和 IIO 私有状态
+  -> regmap_read(state->regmap, 0x75, &identity)
   -> 0x70：继续复位、配置和回读
   -> 连续读取 14 字节并解析、打印一帧
+  -> devm_iio_device_register 注册用户态按需读取接口
   -> 全部成功才返回 0，完成绑定；失败返回负错误码
 ```
 
@@ -36,11 +37,13 @@ compatible 提取设备类型，系统驱动可能按 mpu6500 名称回退匹配
 ## 当前实现的边界
 
 probe 先检查身份，再复位、初始化、回读配置并采集一帧。
-remove 将设备置于休眠；初始化或首帧读取失败时也尝试休眠，保留原始错误码。
-没有设备私有动态资源、定时工作或中断，当前仍无持续采集。
+devm 管理 IIO 分配、regmap、休眠动作和 IIO 注册。解绑先注销 IIO，
+再执行休眠动作，最后释放 regmap 和私有状态；不再需要显式 remove 回调。
+初始化或首帧读取失败也会自动执行已登记的休眠动作。
+mutex 串行化 raw 读取，没有定时工作、中断或缓冲区。
 配置及数据格式见 initialization.md。
 模块加载成功不代表设备 probe 成功，应检查 sysfs 的 driver 链接与日志。
-本阶段没有用户态采集接口，后续使用 IIO，不新建字符设备。
+本阶段提供 IIO sysfs raw/scale/offset 按需读取接口，详见 iio.md。
 
 ## 验证记录
 

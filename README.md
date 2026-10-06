@@ -5,7 +5,7 @@
 ```text
 gpio/                  GPIO LED 实验，源码和原说明完整保留
 mpu6500/
-  driver/              I2C client 驱动，后续 core/regmap/IIO
+  driver/              I2C client 驱动、regmap 和 IIO 按需读取
   dts/                 MPU6500 Device Tree Overlay
   userspace/           用户态采集程序
   scripts/             构建、加载、卸载脚本
@@ -18,5 +18,5 @@ docs/roadmap.md         整体学习路线
 GPIO 操作前先 cd gpio，再按 gpio/README.md 执行。
 
 MPU6500 已完成设备树绑定、身份检查、复位与配置回读，以及连续 14 字节
-读取和原始数据解析。操作方法见 mpu6500/README.md；下一步为 IIO 数据接口。
-尚未实现 IIO 或配置开机加载。
+读取和原始数据解析，并提供 regmap + IIO 按需读取接口。
+操作方法见 mpu6500/README.md；下一步为缓冲区与连续采集。未配置开机加载。
