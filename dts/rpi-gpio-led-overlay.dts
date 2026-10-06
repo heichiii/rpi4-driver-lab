@@ -11,6 +11,8 @@
             /* Deliberately different from the driver name: OF match is used. */
             rpi-gpio-lab {
                 compatible = "heichi,rpi-gpio";
+                /* BCM GPIO12, active high (0); physical header pin 32. */
+                led-gpios = <&gpio 12 0>;
                 status = "okay";
             };
         };

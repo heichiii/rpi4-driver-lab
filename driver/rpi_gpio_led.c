@@ -1,6 +1,7 @@
 #include <linux/module.h>
 #include <linux/platform_device.h>
 #include <linux/of.h>
+#include <linux/gpio/consumer.h>
 #include <linux/fs.h>
 #include <linux/cdev.h>
 #include <linux/device.h>
@@ -12,7 +13,6 @@
 
 #define DEVICE_NAME "rpi_gpio"
 #define CLASS_NAME "rpi_gpio"
-#define BUFFER_SIZE 128
 
 struct rpi_gpio_data {
     struct cdev cdev;
@@ -20,8 +20,7 @@ struct rpi_gpio_data {
     struct class *class;
     struct mutex lock;
     bool online;
-    char buffer[BUFFER_SIZE];
-    size_t data_size;
+    struct gpio_desc *led;
 };
 
 /* cdev and open files hold references to char_dev until they are finished. */
@@ -63,46 +62,59 @@ static int rpi_gpio_release(struct inode *inode, struct file *file)
     return 0;
 }
 
+/* Return the logical GPIO level as "0\n" or "1\n". */
 static ssize_t rpi_gpio_read(struct file *file, char __user *buffer,
                             size_t count, loff_t *position)
 {
     struct rpi_gpio_data *data = file->private_data;
+    char state[2];
     ssize_t ret;
+    int value;
 
-    if (mutex_lock_interruptible(&data->lock))
-        return -ERESTARTSYS;
-    if (!data->online)
-        ret = -ENODEV;
-    else
-        ret = simple_read_from_buffer(buffer, count, position,
-                                      data->buffer, data->data_size);
-    mutex_unlock(&data->lock);
-    return ret;
-}
-
-/* Each write replaces the buffer; actual GPIO control comes in a later phase. */
-static ssize_t rpi_gpio_write(struct file *file, const char __user *buffer,
-                             size_t count, loff_t *position)
-{
-    struct rpi_gpio_data *data = file->private_data;
-    char temporary_buffer[BUFFER_SIZE];
-    ssize_t ret;
-
-    if (count > BUFFER_SIZE)
-        return -EMSGSIZE;
-    if (copy_from_user(temporary_buffer, buffer, count))
-        return -EFAULT;
     if (mutex_lock_interruptible(&data->lock))
         return -ERESTARTSYS;
     if (!data->online) {
         ret = -ENODEV;
         goto unlock;
     }
-    if (count) {
-        memcpy(data->buffer, temporary_buffer, count);
-        data->data_size = count;
-        *position = 0;
+    value = gpiod_get_value_cansleep(data->led);
+    if (value < 0) {
+        ret = value;
+        goto unlock;
     }
+    state[0] = value ? '1' : '0';
+    state[1] = '\n';
+    ret = simple_read_from_buffer(buffer, count, position, state, sizeof(state));
+unlock:
+    mutex_unlock(&data->lock);
+    return ret;
+}
+
+/* Accept 0/1, optionally followed by the newline added by echo. */
+static ssize_t rpi_gpio_write(struct file *file, const char __user *buffer,
+                             size_t count, loff_t *position)
+{
+    struct rpi_gpio_data *data = file->private_data;
+    char command[2];
+    ssize_t ret;
+
+    if (!count)
+        return 0;
+    if (count > sizeof(command))
+        return -EMSGSIZE;
+    if (copy_from_user(command, buffer, count))
+        return -EFAULT;
+    if ((command[0] != '0' && command[0] != '1') ||
+        (count == 2 && command[1] != '\n'))
+        return -EINVAL;
+    if (mutex_lock_interruptible(&data->lock))
+        return -ERESTARTSYS;
+    if (!data->online) {
+        ret = -ENODEV;
+        goto unlock;
+    }
+    gpiod_set_value_cansleep(data->led, command[0] == '1');
+    *position = 0;
     ret = count;
 unlock:
     mutex_unlock(&data->lock);
@@ -130,6 +142,14 @@ static int rpi_gpio_probe(struct platform_device *pdev)
     data->char_dev.release = rpi_gpio_device_release;
     data->char_dev.parent = &pdev->dev;
 
+    /* "led" maps to led-gpios; initialize logically OFF. */
+    data->led = devm_gpiod_get(&pdev->dev, "led", GPIOD_OUT_LOW);
+    if (IS_ERR(data->led)) {
+        ret = dev_err_probe(&pdev->dev, PTR_ERR(data->led),
+                            "failed to acquire LED GPIO\n");
+        goto put_device;
+    }
+
     ret = alloc_chrdev_region(&data->char_dev.devt, 0, 1, DEVICE_NAME);
     if (ret)
         goto put_device;
@@ -150,6 +170,7 @@ static int rpi_gpio_probe(struct platform_device *pdev)
     ret = cdev_device_add(&data->cdev, &data->char_dev);
     if (ret) {
         mutex_lock(&data->lock);
+        gpiod_set_value_cansleep(data->led, 0);
         data->online = false;
         mutex_unlock(&data->lock);
         goto destroy_class;
@@ -174,6 +195,7 @@ static void rpi_gpio_remove(struct platform_device *pdev)
     struct rpi_gpio_data *data = platform_get_drvdata(pdev);
 
     mutex_lock(&data->lock);
+    gpiod_set_value_cansleep(data->led, 0);
     data->online = false;
     mutex_unlock(&data->lock);
     cdev_device_del(&data->cdev, &data->char_dev);
@@ -204,5 +226,5 @@ module_platform_driver(rpi_gpio_driver);
 
 MODULE_LICENSE("GPL");
 MODULE_AUTHOR("Gao Kailong");
-MODULE_DESCRIPTION("Raspberry Pi 4 platform character device lab");
+MODULE_DESCRIPTION("Raspberry Pi 4 device-tree GPIO LED driver");
 MODULE_ALIAS("platform:" DEVICE_NAME);

@@ -1,5 +1,4 @@
-obj-m += hello.o
-obj-m += rpi_gpio.o
+obj-m += rpi_gpio_led.o
 
 KDIR ?= /lib/modules/$(shell uname -r)/build
 BUILD_DIR := $(CURDIR)/build
