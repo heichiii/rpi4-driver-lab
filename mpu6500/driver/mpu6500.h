@@ -1,0 +1,7 @@
+#ifndef MPU6500_LAB_H
+#define MPU6500_LAB_H
+
+#define MPU6500_REG_WHO_AM_I 0x75
+#define MPU6500_WHO_AM_I_VALUE 0x70
+
+#endif

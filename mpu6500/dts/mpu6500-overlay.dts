@@ -1,0 +1,21 @@
+/dts-v1/;
+/plugin/;
+
+/ {
+    compatible = "raspberrypi,4-model-b", "brcm,bcm2711";
+
+    fragment@0 {
+        target = <&i2c1>;
+
+        __overlay__ {
+            #address-cells = <1>;
+            #size-cells = <0>;
+
+            imu@68 {
+                compatible = "heichi,mpu6500-lab";
+                reg = <0x68>;
+                status = "okay";
+            };
+        };
+    };
+};
