@@ -1,4 +1,4 @@
-# 第一版 I2C client 驱动
+# I2C client 驱动
 
 ## 流程
 
@@ -7,9 +7,11 @@
   -> I2C core 创建 i2c_client（1-0068）
   -> compatible = heichi,mpu6500-lab 匹配
   -> mpu6500_probe(client)
-  -> 检查 SMBus byte-data 读取能力
+  -> 检查 SMBus byte-data 读写和普通 I2C 传输能力
   -> i2c_smbus_read_byte_data(client, 0x75)
-  -> 0x70：成功绑定；读失败或身份不符：返回负错误码
+  -> 0x70：继续复位、配置和回读
+  -> 连续读取 14 字节并解析、打印一帧
+  -> 全部成功才返回 0，完成绑定；失败返回负错误码
 ```
 
 client 表示一个具体 I2C 设备；client->adapter 指向所在总线，
@@ -31,10 +33,12 @@ compatible 提取设备类型，系统驱动可能按 mpu6500 名称回退匹配
 -lab 后缀避免这种冲突，因此 Overlay 先加载也不会被系统 IIO 驱动接管。
 这是学习项目的私有 compatible，不是上游标准 binding。
 
-## 第一版的边界
+## 当前实现的边界
 
-probe 只读取身份，无配置写入，无设备私有状态或动态资源。
-remove 记录解绑，无需释放尚未申请的资源。
+probe 先检查身份，再复位、初始化、回读配置并采集一帧。
+remove 将设备置于休眠；初始化或首帧读取失败时也尝试休眠，保留原始错误码。
+没有设备私有动态资源、定时工作或中断，当前仍无持续采集。
+配置及数据格式见 initialization.md。
 模块加载成功不代表设备 probe 成功，应检查 sysfs 的 driver 链接与日志。
 本阶段没有用户态采集接口，后续使用 IIO，不新建字符设备。
 

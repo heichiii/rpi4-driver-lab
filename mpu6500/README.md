@@ -1,7 +1,8 @@
 # Raspberry Pi 4B MPU6500 I2C / IIO Lab
 
-当前完成第一版 I2C client 驱动：设备树创建设备，probe 读取并校验
-WHO_AM_I，成功后绑定。尚未实现寄存器配置、数据接口、regmap 或 IIO。
+当前完成 I2C client 驱动的身份检查、复位与初始化，以及一次连续 14 字节
+读取。probe 回读配置寄存器并打印七个有符号原始值。尚未实现用户态数据
+接口、regmap 或 IIO。
 GPIO 实验仍暂停在 ../gpio/。
 
 ## 硬件
@@ -19,6 +20,7 @@ VCC/GND 已连接，INT 暂不使用。验证记录见 docs/hardware-validation.
 - dts/mpu6500-overlay.dts：I2C1 下地址为 0x68 的设备节点。
 - dts/Makefile：产物 dts/build/mpu6500-overlay.dtbo。
 - docs/i2c-driver.md：驱动流程、绑定和测试方法。
+- docs/initialization.md：初始化顺序、配置表、数据解析与实测记录。
 - userspace/、scripts/、benchmark/：预留后续采集、脚本和性能验证。
 
 ## 编译与加载
@@ -38,6 +40,8 @@ sudo dmesg | tail -n 15
 
 ```text
 mpu6500_lab 1-0068: probe: bus=1 address=0x68 WHO_AM_I=0x70
+mpu6500_lab 1-0068: initialized: accel=+/-2g gyro=+/-250dps rate=100Hz DLPF=3
+mpu6500_lab 1-0068: sample raw: accel=(...) temp=... gyro=(...)
 ```
 
 也支持先加载 Overlay 后加载模块。不要重复加载已存在的模块或 Overlay。
@@ -60,10 +64,14 @@ sudo i2cget -y 1 0x68 0x75 b
 echo 1-0068 | sudo tee /sys/bus/i2c/drivers/mpu6500_lab/bind > /dev/null
 ```
 
+解绑/remove 会将芯片置于休眠，WHO_AM_I 仍可读取。若需要手工采集数据，
+解绑后先执行 sudo i2cset -y 1 0x68 0x6b 0x01 b，并等待至少 100 ms，
+再用 i2ctransfer 读取；重新绑定会复位并重新初始化。
 不要用 -f 强制绕过驱动占用。
 
 ## 后续
 
-下一步加入电源/量程/采样配置与连续 14 字节读取，再迁移到 regmap、IIO。
+下一步迁移到 regmap、IIO，并提供用户态按需读取。当前 100 Hz 是芯片
+内部数据更新率，驱动没有定时采集，每次 probe 只读取并打印一帧。
 设备树使用实验 compatible heichi,mpu6500-lab，区别于上游标准
 invensense,mpu6500；不修改系统驱动、不永久 blacklist、不配置开机加载。
