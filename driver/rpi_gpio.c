@@ -1,5 +1,6 @@
 #include <linux/module.h>
 #include <linux/platform_device.h>
+#include <linux/of.h>
 #include <linux/fs.h>
 #include <linux/cdev.h>
 #include <linux/device.h>
@@ -184,11 +185,18 @@ static void rpi_gpio_remove(struct platform_device *pdev)
     put_device(&data->char_dev);
 }
 
+static const struct of_device_id rpi_gpio_of_match[] = {
+    { .compatible = "heichi,rpi-gpio" },
+    { }
+};
+MODULE_DEVICE_TABLE(of, rpi_gpio_of_match);
+
 static struct platform_driver rpi_gpio_driver = {
     .probe = rpi_gpio_probe,
     .remove = rpi_gpio_remove,
     .driver = {
         .name = DEVICE_NAME,
+        .of_match_table = rpi_gpio_of_match,
     },
 };
 
