@@ -47,7 +47,7 @@ static int mpu6500_initialize(struct mpu6500_state *state)
                                    MPU6500_DEVICE_RESET);
     if (ret < 0)
         return dev_err_probe(&client->dev, ret, "device reset failed\n");
-    msleep(100);
+    msleep(100); // Allow reset to complete before writing configuration registers.
 
     for (i = 0; i < ARRAY_SIZE(mpu6500_config); i++) {
         ret = regmap_write(state->regmap, mpu6500_config[i].reg,
@@ -101,6 +101,7 @@ static int mpu6500_read_sample(struct mpu6500_state *state,
     return 0;
 }
 
+/* 写电源管理寄存器，使芯片休眠 */
 static void mpu6500_sleep(void *data)
 {
     struct mpu6500_state *state = data;
@@ -215,21 +216,27 @@ static int mpu6500_probe(struct i2c_client *client)
     unsigned int identity;
     int ret;
 
-    if (!i2c_check_functionality(client->adapter, I2C_FUNC_I2C))
-        return dev_err_probe(&client->dev, -EOPNOTSUPP,
-                             "adapter needs I2C transfers for regmap\n");
+    if (!i2c_check_functionality(client->adapter, I2C_FUNC_I2C))  //MPU6500 所在的 I²C 控制器，是否支持普通 I²C 传输
+        return dev_err_probe(&client->dev, -EOPNOTSUPP,"adapter needs I2C transfers for regmap\n");
 
+    // Allocate IIO device with private state structure.
     indio_dev = devm_iio_device_alloc(&client->dev, sizeof(*state));
     if (!indio_dev)
         return -ENOMEM;
-    state = iio_priv(indio_dev);
+    state = iio_priv(indio_dev);//get private data pointer from IIO device structure
+    
+    //state client
     state->client = client;
+
+    //state lock
     mutex_init(&state->lock);
+
+    //state regmap
     state->regmap = devm_regmap_init_i2c(client, &mpu6500_regmap_config);
     if (IS_ERR(state->regmap))
         return dev_err_probe(&client->dev, PTR_ERR(state->regmap),
                              "regmap initialization failed\n");
-
+    // check WHO_AM_I register
     ret = regmap_read(state->regmap, MPU6500_REG_WHO_AM_I, &identity);
     if (ret)
         return dev_err_probe(&client->dev, ret, "WHO_AM_I read failed\n");
@@ -270,17 +277,18 @@ static int mpu6500_probe(struct i2c_client *client)
 }
 
 /* Lab-specific compatible avoids binding the upstream IIO driver by accident. */
+// match for device tree compatible string
 static const struct of_device_id mpu6500_of_match[] = {
     { .compatible = "heichi,mpu6500-lab" },
     { }
 };
 MODULE_DEVICE_TABLE(of, mpu6500_of_match);
 
-static const struct i2c_device_id mpu6500_ids[] = {
-    { "mpu6500_lab", 0 },
-    { }
-};
-MODULE_DEVICE_TABLE(i2c, mpu6500_ids);
+// static const struct i2c_device_id mpu6500_ids[] = {
+//     { "mpu6500_lab", 0 },
+//     { }
+// };
+// MODULE_DEVICE_TABLE(i2c, mpu6500_ids);
 
 static struct i2c_driver mpu6500_driver = {
     .driver = {
@@ -288,7 +296,7 @@ static struct i2c_driver mpu6500_driver = {
         .of_match_table = mpu6500_of_match,
     },
     .probe = mpu6500_probe,
-    .id_table = mpu6500_ids,
+    // .id_table = mpu6500_ids,
 };
 module_i2c_driver(mpu6500_driver);
 
